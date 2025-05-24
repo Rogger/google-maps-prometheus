@@ -26,3 +26,5 @@ The script exposes the following metrics:
 
 * `commute_time_seconds_to_b3`: Commute time in seconds from EKZ to B3.
 * `commute_time_seconds_to_ekz`: Commute time in seconds from B3 to EKZ.
+* `commute_time_seconds_trins_to_b3`: Commute time in seconds from Trins to B3.
+* `commute_time_seconds_b3_to_trins`: Commute time in seconds from B3 to Trins.
