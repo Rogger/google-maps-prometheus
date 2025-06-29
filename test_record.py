@@ -131,102 +131,94 @@ class TestRecord(unittest.TestCase):
             error_calls = [call for call in mock_print.call_args_list if 'ERROR' in str(call)]
             self.assertEqual(len(error_calls), 2)
 
-    def test_get_next_run_time_night_hours(self):
-        """Test next run time calculation during night hours (20:00 - 05:59)."""
-        # Test at 22:30 - should return 23:00
+    def test_get_next_run_time_morning_window(self):
+        """Test next run time calculation during the morning window (06:00 - 09:59)."""
+        # Test at 07:05 -> should return 07:15
         with patch('record.datetime') as mock_datetime:
-            current_time = datetime(2024, 1, 15, 22, 30, 15, tzinfo=self.CET)
+            current_time = datetime(2024, 1, 15, 7, 5, 0, tzinfo=self.CET)
             mock_datetime.now.return_value = current_time
-            
             next_run = record.get_next_run_time()
-            expected = datetime(2024, 1, 15, 23, 0, 0, tzinfo=self.CET)
-            
-            self.assertEqual(next_run, expected)
-        
-        # Test at 03:45 - should return 04:00
-        with patch('record.datetime') as mock_datetime:
-            current_time = datetime(2024, 1, 15, 3, 45, 30, tzinfo=self.CET)
-            mock_datetime.now.return_value = current_time
-            
-            next_run = record.get_next_run_time()
-            expected = datetime(2024, 1, 15, 4, 0, 0, tzinfo=self.CET)
-            
+            expected = datetime(2024, 1, 15, 7, 15, 0, tzinfo=self.CET)
             self.assertEqual(next_run, expected)
 
-    def test_get_next_run_time_day_hours_15_minute_intervals(self):
-        """Test next run time calculation during day hours (06:00 - 19:59)."""
-        # Test at 10:05 - should return 10:15
-        with patch('record.datetime') as mock_datetime:
-            current_time = datetime(2024, 1, 15, 10, 5, 0, tzinfo=self.CET)
-            mock_datetime.now.return_value = current_time
-            
-            next_run = record.get_next_run_time()
-            expected = datetime(2024, 1, 15, 10, 15, 0, tzinfo=self.CET)
-            
-            self.assertEqual(next_run, expected)
-        
-        # Test at 14:20 - should return 14:30
-        with patch('record.datetime') as mock_datetime:
-            current_time = datetime(2024, 1, 15, 14, 20, 0, tzinfo=self.CET)
-            mock_datetime.now.return_value = current_time
-            
-            next_run = record.get_next_run_time()
-            expected = datetime(2024, 1, 15, 14, 30, 0, tzinfo=self.CET)
-            
-            self.assertEqual(next_run, expected)
-        
-        # Test at 16:35 - should return 16:45
+    def test_get_next_run_time_afternoon_window(self):
+        """Test next run time calculation during the afternoon window (15:00 - 18:59)."""
+        # Test at 16:35 -> should return 16:45
         with patch('record.datetime') as mock_datetime:
             current_time = datetime(2024, 1, 15, 16, 35, 0, tzinfo=self.CET)
             mock_datetime.now.return_value = current_time
-            
             next_run = record.get_next_run_time()
             expected = datetime(2024, 1, 15, 16, 45, 0, tzinfo=self.CET)
-            
             self.assertEqual(next_run, expected)
-        
-        # Test at 18:50 - should return 19:00
+
+    def test_get_next_run_time_outside_windows(self):
+        """Test next run time calculation outside active windows."""
+        # Before morning window (e.g., 03:45) -> should return 06:00
         with patch('record.datetime') as mock_datetime:
-            current_time = datetime(2024, 1, 15, 18, 50, 0, tzinfo=self.CET)
+            current_time = datetime(2024, 1, 15, 3, 45, 30, tzinfo=self.CET)
             mock_datetime.now.return_value = current_time
-            
             next_run = record.get_next_run_time()
-            expected = datetime(2024, 1, 15, 19, 0, 0, tzinfo=self.CET)
-            
+            expected = datetime(2024, 1, 15, 6, 0, 0, tzinfo=self.CET)
+            self.assertEqual(next_run, expected)
+
+        # Between windows (e.g., 11:00) -> should return 15:00
+        with patch('record.datetime') as mock_datetime:
+            current_time = datetime(2024, 1, 15, 11, 0, 0, tzinfo=self.CET)
+            mock_datetime.now.return_value = current_time
+            next_run = record.get_next_run_time()
+            expected = datetime(2024, 1, 15, 15, 0, 0, tzinfo=self.CET)
+            self.assertEqual(next_run, expected)
+
+        # After afternoon window (e.g., 22:30) -> should return 06:00 next day
+        with patch('record.datetime') as mock_datetime:
+            current_time = datetime(2024, 1, 15, 22, 30, 15, tzinfo=self.CET)
+            mock_datetime.now.return_value = current_time
+            next_run = record.get_next_run_time()
+            expected = datetime(2024, 1, 16, 6, 0, 0, tzinfo=self.CET)
             self.assertEqual(next_run, expected)
 
     def test_get_next_run_time_boundary_conditions(self):
         """Test next run time calculation at boundary hours."""
-        # Test at exactly 20:00 - should be night mode, return 21:00
-        with patch('record.datetime') as mock_datetime:
-            current_time = datetime(2024, 1, 15, 20, 0, 0, tzinfo=self.CET)
-            mock_datetime.now.return_value = current_time
-            
-            next_run = record.get_next_run_time()
-            expected = datetime(2024, 1, 15, 21, 0, 0, tzinfo=self.CET)
-            
-            self.assertEqual(next_run, expected)
-        
-        # Test at exactly 06:00 - should be day mode, return 06:15
+        # At 06:00 (start of morning window) -> should be 06:15
         with patch('record.datetime') as mock_datetime:
             current_time = datetime(2024, 1, 15, 6, 0, 0, tzinfo=self.CET)
             mock_datetime.now.return_value = current_time
-            
             next_run = record.get_next_run_time()
             expected = datetime(2024, 1, 15, 6, 15, 0, tzinfo=self.CET)
-            
+            self.assertEqual(next_run, expected)
+
+        # At 10:00 (end of morning window) -> should be 15:00
+        with patch('record.datetime') as mock_datetime:
+            current_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=self.CET)
+            mock_datetime.now.return_value = current_time
+            next_run = record.get_next_run_time()
+            expected = datetime(2024, 1, 15, 15, 0, 0, tzinfo=self.CET)
+            self.assertEqual(next_run, expected)
+
+        # At 15:00 (start of afternoon window) -> should be 15:15
+        with patch('record.datetime') as mock_datetime:
+            current_time = datetime(2024, 1, 15, 15, 0, 0, tzinfo=self.CET)
+            mock_datetime.now.return_value = current_time
+            next_run = record.get_next_run_time()
+            expected = datetime(2024, 1, 15, 15, 15, 0, tzinfo=self.CET)
+            self.assertEqual(next_run, expected)
+
+        # At 19:00 (end of afternoon window) -> should be 06:00 next day
+        with patch('record.datetime') as mock_datetime:
+            current_time = datetime(2024, 1, 15, 19, 0, 0, tzinfo=self.CET)
+            mock_datetime.now.return_value = current_time
+            next_run = record.get_next_run_time()
+            expected = datetime(2024, 1, 16, 6, 0, 0, tzinfo=self.CET)
             self.assertEqual(next_run, expected)
 
     def test_get_next_run_time_midnight_rollover(self):
         """Test next run time calculation around midnight."""
-        # Test at 23:30 - should return 00:00 next day
+        # Test at 23:30 -> should return 06:00 next day
         with patch('record.datetime') as mock_datetime:
             current_time = datetime(2024, 1, 15, 23, 30, 0, tzinfo=self.CET)
             mock_datetime.now.return_value = current_time
-            
             next_run = record.get_next_run_time()
-            expected = datetime(2024, 1, 16, 0, 0, 0, tzinfo=self.CET)
-            
+            expected = datetime(2024, 1, 16, 6, 0, 0, tzinfo=self.CET)
             self.assertEqual(next_run, expected)
 
 

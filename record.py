@@ -64,14 +64,13 @@ def update_commute_time():
 
 def get_next_run_time():
     now = datetime.now(CET)
-    
-    # Night hours (20:00 - 05:59): Run on the hour (:00)
-    if now.hour >= 20 or now.hour < 6:
-        # Calculate the next hour. If it's 20:30, next is 21:00. If 05:30, next is 06:00.
-        next_run = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-        
-    # Day hours (06:00 - 19:59): Run every 15 minutes (:00, :15, :30, :45)
-    else:        
+    hour = now.hour
+
+    is_morning_window = 6 <= hour < 10
+    is_afternoon_window = 15 <= hour < 19
+
+    # If inside an active window, calculate next 15-min interval
+    if is_morning_window or is_afternoon_window:
         # Determine the next 15-minute interval
         current_minute = now.minute
         if current_minute < 15:
@@ -80,8 +79,21 @@ def get_next_run_time():
             next_run = now.replace(minute=30, second=0, microsecond=0)
         elif current_minute < 45:
             next_run = now.replace(minute=45, second=0, microsecond=0)
-        else: # current_minute >= 45, go to next hour's :00
+        else:  # current_minute >= 45, go to next hour's :00
             next_run = now.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+
+    else:  # Outside active hours
+        # Find the start of the next window.
+        # Case 1: Before the morning window (e.g., 00:00-05:59)
+        if hour < 6:
+            next_run = now.replace(hour=6, minute=0, second=0, microsecond=0)
+        # Case 2: Between the windows (e.g., 10:00-14:59)
+        elif hour < 15:  # This covers 10 <= hour < 15
+            next_run = now.replace(hour=15, minute=0, second=0, microsecond=0)
+        # Case 3: After the afternoon window (e.g., 19:00-23:59)
+        else:  # hour >= 19
+            # next day at 6:00
+            next_run = (now + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)
 
     return next_run
 
