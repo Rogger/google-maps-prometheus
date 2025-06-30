@@ -62,15 +62,27 @@ def update_commute_time():
     else:
         print(f"[{now}] ERROR: could not fetch travel time")
 
+def unset_gauges():
+    now = datetime.now(CET)
+    print(f"[{now}] Outside of scheduled intervals. Unsetting gauge values.")
+    commute_time_seconds_to_b3.set(float('nan'))
+    commute_time_seconds_to_ekz.set(float('nan'))
+    commute_time_seconds_trins_to_b3.set(float('nan'))
+    commute_time_seconds_b3_to_trins.set(float('nan'))
+
+def is_in_active_window():
+    now = datetime.now(CET)
+    hour = now.hour
+    is_morning_window = 6 <= hour < 10
+    is_afternoon_window = 15 <= hour < 19
+    return is_morning_window or is_afternoon_window
+
 def get_next_run_time():
     now = datetime.now(CET)
     hour = now.hour
 
-    is_morning_window = 6 <= hour < 10
-    is_afternoon_window = 15 <= hour < 19
-
     # If inside an active window, calculate next 15-min interval
-    if is_morning_window or is_afternoon_window:
+    if is_in_active_window():
         # Determine the next 15-minute interval
         current_minute = now.minute
         if current_minute < 15:
@@ -102,13 +114,15 @@ if __name__ == "__main__":
     print(f"Prometheus endpoint started on port {PROMETHEUS_PORT}")
 
     while True:
+        if is_in_active_window():
+            update_commute_time()
+        else:
+            unset_gauges()
+        
         next_scheduled_run = get_next_run_time()
         sleep_duration = (next_scheduled_run - datetime.now(CET)).total_seconds()
             
         if sleep_duration > 0:
-            print(f"[{datetime.now(CET)}] Next update scheduled for: {next_scheduled_run.strftime('%Y-%m-%d %H:%M:%S')}. Sleeping for {int(sleep_duration)} seconds.")
+            print(f"[{datetime.now(CET)}] Next check scheduled for: {next_scheduled_run.strftime('%Y-%m-%d %H:%M:%S')}. Sleeping for {int(sleep_duration)} seconds.")
             sys.stdout.flush()
             time.sleep(sleep_duration)
-        
-        # Now it's time to run the update
-        update_commute_time()
