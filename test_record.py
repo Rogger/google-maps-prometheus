@@ -70,8 +70,8 @@ class TestRecord(unittest.TestCase):
         """Test travel time retrieval when API raises exception."""
         mock_gmaps.distance_matrix.side_effect = Exception("API Error")
         
-        with self.assertRaises(Exception):
-            record.get_travel_time("origin", "destination")
+        result = record.get_travel_time("origin", "destination")
+        self.assertIsNone(result)
 
     @patch('record.get_travel_time')
     @patch('record.datetime')

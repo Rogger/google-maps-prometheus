@@ -18,19 +18,23 @@ gmaps = googlemaps.Client(key=API_KEY)
 
 # Create a Prometheus Gauge metric to store the commute time
 commute_time_seconds_to_b3 = Gauge('commute_time_seconds_to_b3', 'Commute time in seconds from EKZ to B3')
-commute_time_seconds_to_ekz = Gauge('commute_time_seconds_to_ekz', 'Commute time in seconds from EKZ to B3')
+commute_time_seconds_to_ekz = Gauge('commute_time_seconds_to_ekz', 'Commute time in seconds from B3 to EKZ')
 commute_time_seconds_trins_to_b3 = Gauge('commute_time_seconds_trins_to_b3', 'Commute time in seconds from Trins to B3')
 commute_time_seconds_b3_to_trins = Gauge('commute_time_seconds_b3_to_trins', 'Commute time in seconds from B3 to Trins')
 
 
 def get_travel_time(orig, dest):
-    # departure_time="now" makes Google return traffic-aware duration
-    resp = gmaps.distance_matrix(orig, dest, mode="driving", departure_time="now")
-    elem = resp["rows"][0]["elements"][0]
-    if elem["status"] != "OK":
+    try:
+        # departure_time="now" makes Google return traffic-aware duration
+        resp = gmaps.distance_matrix(orig, dest, mode="driving", departure_time="now")
+        elem = resp["rows"][0]["elements"][0]
+        if elem["status"] != "OK":
+            return None
+        # duration_in_traffic is in seconds
+        return elem["duration_in_traffic"]["value"]
+    except Exception as e:
+        print(f"[{datetime.now(CET)}] ERROR: an exception occurred while fetching travel time: {e}")
         return None
-    # duration_in_traffic is in seconds
-    return elem["duration_in_traffic"]["value"]
         
 def update_commute_time():
     now = datetime.now(CET)
