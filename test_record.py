@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 import sys
 import os
 import time
+import math
 
 # Set a dummy API key before importing record.py to avoid initialization error
 os.environ['GOOGLE_API_KEY'] = 'test_dummy_key'
@@ -69,8 +70,8 @@ class TestRecord(unittest.TestCase):
         """Test travel time retrieval when API raises exception."""
         mock_gmaps.distance_matrix.side_effect = Exception("API Error")
         
-        with self.assertRaises(Exception):
-            record.get_travel_time("origin", "destination")
+        result = record.get_travel_time("origin", "destination")
+        self.assertIsNone(result)
 
     @patch('record.get_travel_time')
     @patch('record.datetime')
@@ -131,103 +132,126 @@ class TestRecord(unittest.TestCase):
             error_calls = [call for call in mock_print.call_args_list if 'ERROR' in str(call)]
             self.assertEqual(len(error_calls), 2)
 
-    def test_get_next_run_time_night_hours(self):
-        """Test next run time calculation during night hours (20:00 - 05:59)."""
-        # Test at 22:30 - should return 23:00
+    def test_get_next_run_time_morning_window(self):
+        """Test next run time calculation during the morning window (06:00 - 09:59)."""
+        # Test at 07:05 -> should return 07:15
         with patch('record.datetime') as mock_datetime:
-            current_time = datetime(2024, 1, 15, 22, 30, 15, tzinfo=self.CET)
+            current_time = datetime(2024, 1, 15, 7, 5, 0, tzinfo=self.CET)
             mock_datetime.now.return_value = current_time
-            
             next_run = record.get_next_run_time()
-            expected = datetime(2024, 1, 15, 23, 0, 0, tzinfo=self.CET)
-            
-            self.assertEqual(next_run, expected)
-        
-        # Test at 03:45 - should return 04:00
-        with patch('record.datetime') as mock_datetime:
-            current_time = datetime(2024, 1, 15, 3, 45, 30, tzinfo=self.CET)
-            mock_datetime.now.return_value = current_time
-            
-            next_run = record.get_next_run_time()
-            expected = datetime(2024, 1, 15, 4, 0, 0, tzinfo=self.CET)
-            
+            expected = datetime(2024, 1, 15, 7, 15, 0, tzinfo=self.CET)
             self.assertEqual(next_run, expected)
 
-    def test_get_next_run_time_day_hours_15_minute_intervals(self):
-        """Test next run time calculation during day hours (06:00 - 19:59)."""
-        # Test at 10:05 - should return 10:15
-        with patch('record.datetime') as mock_datetime:
-            current_time = datetime(2024, 1, 15, 10, 5, 0, tzinfo=self.CET)
-            mock_datetime.now.return_value = current_time
-            
-            next_run = record.get_next_run_time()
-            expected = datetime(2024, 1, 15, 10, 15, 0, tzinfo=self.CET)
-            
-            self.assertEqual(next_run, expected)
-        
-        # Test at 14:20 - should return 14:30
-        with patch('record.datetime') as mock_datetime:
-            current_time = datetime(2024, 1, 15, 14, 20, 0, tzinfo=self.CET)
-            mock_datetime.now.return_value = current_time
-            
-            next_run = record.get_next_run_time()
-            expected = datetime(2024, 1, 15, 14, 30, 0, tzinfo=self.CET)
-            
-            self.assertEqual(next_run, expected)
-        
-        # Test at 16:35 - should return 16:45
+    def test_get_next_run_time_afternoon_window(self):
+        """Test next run time calculation during the afternoon window (15:00 - 18:59)."""
+        # Test at 16:35 -> should return 16:45
         with patch('record.datetime') as mock_datetime:
             current_time = datetime(2024, 1, 15, 16, 35, 0, tzinfo=self.CET)
             mock_datetime.now.return_value = current_time
-            
             next_run = record.get_next_run_time()
             expected = datetime(2024, 1, 15, 16, 45, 0, tzinfo=self.CET)
-            
             self.assertEqual(next_run, expected)
-        
-        # Test at 18:50 - should return 19:00
+
+    def test_get_next_run_time_outside_windows(self):
+        """Test next run time calculation outside active windows."""
+        # Before morning window (e.g., 03:45) -> should return 06:00
         with patch('record.datetime') as mock_datetime:
-            current_time = datetime(2024, 1, 15, 18, 50, 0, tzinfo=self.CET)
+            current_time = datetime(2024, 1, 15, 3, 45, 30, tzinfo=self.CET)
             mock_datetime.now.return_value = current_time
-            
             next_run = record.get_next_run_time()
-            expected = datetime(2024, 1, 15, 19, 0, 0, tzinfo=self.CET)
-            
+            expected = datetime(2024, 1, 15, 6, 0, 0, tzinfo=self.CET)
+            self.assertEqual(next_run, expected)
+
+        # Between windows (e.g., 11:00) -> should return 15:00
+        with patch('record.datetime') as mock_datetime:
+            current_time = datetime(2024, 1, 15, 11, 0, 0, tzinfo=self.CET)
+            mock_datetime.now.return_value = current_time
+            next_run = record.get_next_run_time()
+            expected = datetime(2024, 1, 15, 15, 0, 0, tzinfo=self.CET)
+            self.assertEqual(next_run, expected)
+
+        # After afternoon window (e.g., 22:30) -> should return 06:00 next day
+        with patch('record.datetime') as mock_datetime:
+            current_time = datetime(2024, 1, 15, 22, 30, 15, tzinfo=self.CET)
+            mock_datetime.now.return_value = current_time
+            next_run = record.get_next_run_time()
+            expected = datetime(2024, 1, 16, 6, 0, 0, tzinfo=self.CET)
             self.assertEqual(next_run, expected)
 
     def test_get_next_run_time_boundary_conditions(self):
         """Test next run time calculation at boundary hours."""
-        # Test at exactly 20:00 - should be night mode, return 21:00
-        with patch('record.datetime') as mock_datetime:
-            current_time = datetime(2024, 1, 15, 20, 0, 0, tzinfo=self.CET)
-            mock_datetime.now.return_value = current_time
-            
-            next_run = record.get_next_run_time()
-            expected = datetime(2024, 1, 15, 21, 0, 0, tzinfo=self.CET)
-            
-            self.assertEqual(next_run, expected)
-        
-        # Test at exactly 06:00 - should be day mode, return 06:15
+        # At 06:00 (start of morning window) -> should be 06:15
         with patch('record.datetime') as mock_datetime:
             current_time = datetime(2024, 1, 15, 6, 0, 0, tzinfo=self.CET)
             mock_datetime.now.return_value = current_time
-            
             next_run = record.get_next_run_time()
             expected = datetime(2024, 1, 15, 6, 15, 0, tzinfo=self.CET)
-            
+            self.assertEqual(next_run, expected)
+
+        # At 10:00 (end of morning window) -> should be 15:00
+        with patch('record.datetime') as mock_datetime:
+            current_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=self.CET)
+            mock_datetime.now.return_value = current_time
+            next_run = record.get_next_run_time()
+            expected = datetime(2024, 1, 15, 15, 0, 0, tzinfo=self.CET)
+            self.assertEqual(next_run, expected)
+
+        # At 15:00 (start of afternoon window) -> should be 15:15
+        with patch('record.datetime') as mock_datetime:
+            current_time = datetime(2024, 1, 15, 15, 0, 0, tzinfo=self.CET)
+            mock_datetime.now.return_value = current_time
+            next_run = record.get_next_run_time()
+            expected = datetime(2024, 1, 15, 15, 15, 0, tzinfo=self.CET)
+            self.assertEqual(next_run, expected)
+
+        # At 19:00 (end of afternoon window) -> should be 06:00 next day
+        with patch('record.datetime') as mock_datetime:
+            current_time = datetime(2024, 1, 15, 19, 0, 0, tzinfo=self.CET)
+            mock_datetime.now.return_value = current_time
+            next_run = record.get_next_run_time()
+            expected = datetime(2024, 1, 16, 6, 0, 0, tzinfo=self.CET)
             self.assertEqual(next_run, expected)
 
     def test_get_next_run_time_midnight_rollover(self):
         """Test next run time calculation around midnight."""
-        # Test at 23:30 - should return 00:00 next day
+        # Test at 23:30 -> should return 06:00 next day
         with patch('record.datetime') as mock_datetime:
             current_time = datetime(2024, 1, 15, 23, 30, 0, tzinfo=self.CET)
             mock_datetime.now.return_value = current_time
-            
             next_run = record.get_next_run_time()
-            expected = datetime(2024, 1, 16, 0, 0, 0, tzinfo=self.CET)
-            
+            expected = datetime(2024, 1, 16, 6, 0, 0, tzinfo=self.CET)
             self.assertEqual(next_run, expected)
+
+    def test_is_in_active_window(self):
+        """Test the active window detection."""
+        # Test inside morning window
+        with patch('record.datetime') as mock_datetime:
+            mock_datetime.now.return_value = datetime(2024, 1, 15, 8, 0, 0, tzinfo=self.CET)
+            self.assertTrue(record.is_in_active_window())
+
+        # Test inside afternoon window
+        with patch('record.datetime') as mock_datetime:
+            mock_datetime.now.return_value = datetime(2024, 1, 15, 17, 0, 0, tzinfo=self.CET)
+            self.assertTrue(record.is_in_active_window())
+
+        # Test outside active windows
+        with patch('record.datetime') as mock_datetime:
+            mock_datetime.now.return_value = datetime(2024, 1, 15, 12, 0, 0, tzinfo=self.CET)
+            self.assertFalse(record.is_in_active_window())
+
+    def test_unset_gauges(self):
+        """Test that gauges are correctly unset."""
+        with patch('record.commute_time_seconds_to_ekz') as mock_gauge_ekz, \
+             patch('record.commute_time_seconds_to_b3') as mock_gauge_b3, \
+             patch('record.commute_time_seconds_trins_to_b3') as mock_gauge_trins_b3, \
+             patch('record.commute_time_seconds_b3_to_trins') as mock_gauge_b3_trins:
+            
+            record.unset_gauges()
+            
+            for mock_gauge in [mock_gauge_ekz, mock_gauge_b3, mock_gauge_trins_b3, mock_gauge_b3_trins]:
+                self.assertEqual(mock_gauge.set.call_count, 1)
+                args, kwargs = mock_gauge.set.call_args
+                self.assertTrue(math.isnan(args[0]))
 
 
 class TestIntegration(unittest.TestCase):
@@ -235,44 +259,85 @@ class TestIntegration(unittest.TestCase):
     
     @patch('record.start_http_server')
     @patch('record.update_commute_time')
+    @patch('record.unset_gauges')
+    @patch('record.is_in_active_window')
     @patch('record.get_next_run_time')
     @patch('record.datetime')
     @patch('time.sleep')
     @patch('builtins.print')
     @patch('sys.stdout.flush')
-    def test_main_loop_single_iteration(self, mock_flush, mock_print, mock_sleep, mock_datetime, 
-                                      mock_get_next_run, mock_update, mock_start_server):
-        """Test a single iteration of the main loop."""
+    def test_main_loop_single_iteration_in_window(self, mock_flush, mock_print, mock_sleep, mock_datetime, \
+                                                 mock_get_next_run, mock_is_in_window, mock_unset_gauges, \
+                                                 mock_update, mock_start_server):
+        """Test a single iteration of the main loop inside an active window."""
+        # Mock being inside an active window
+        mock_is_in_window.return_value = True
+        
         # Mock current time and next run time
-        current_time = datetime(2024, 1, 15, 10, 5, 0)
-        next_run_time = datetime(2024, 1, 15, 10, 15, 0)
+        current_time = datetime(2024, 1, 15, 8, 5, 0)
+        next_run_time = datetime(2024, 1, 15, 8, 15, 0)
         
         mock_datetime.now.return_value = current_time
         mock_get_next_run.return_value = next_run_time
         
-        # Mock sleep to avoid actual waiting and break the loop after one iteration
-        def side_effect(duration):
-            # Verify correct sleep duration (10 minutes = 600 seconds)
-            self.assertEqual(duration, 600.0)
-            # Raise an exception to break the infinite loop
-            raise KeyboardInterrupt()
+        # Mock sleep to break the loop after one iteration
+        mock_sleep.side_effect = KeyboardInterrupt()
         
-        mock_sleep.side_effect = side_effect
-        
-        # Test the main execution by calling the functions directly
-        # rather than exec'ing the file
-        try:
+        with self.assertRaises(KeyboardInterrupt):
             record.start_http_server(record.PROMETHEUS_PORT)
-            next_scheduled_run = record.get_next_run_time()
-            sleep_duration = (next_scheduled_run - record.datetime.now(record.CET)).total_seconds()
-            if sleep_duration > 0:
-                time.sleep(sleep_duration)
-        except KeyboardInterrupt:
-            pass
+            while True:
+                if record.is_in_active_window():
+                    record.update_commute_time()
+                else:
+                    record.unset_gauges()
+                next_scheduled_run = record.get_next_run_time()
+                sleep_duration = (next_scheduled_run - record.datetime.now(record.CET)).total_seconds()
+                if sleep_duration > 0:
+                    time.sleep(sleep_duration)
+
+        mock_update.assert_called_once()
+        mock_unset_gauges.assert_not_called()
+
+    @patch('record.start_http_server')
+    @patch('record.update_commute_time')
+    @patch('record.unset_gauges')
+    @patch('record.is_in_active_window')
+    @patch('record.get_next_run_time')
+    @patch('record.datetime')
+    @patch('time.sleep')
+    @patch('builtins.print')
+    @patch('sys.stdout.flush')
+    def test_main_loop_single_iteration_outside_window(self, mock_flush, mock_print, mock_sleep, mock_datetime, \
+                                                      mock_get_next_run, mock_is_in_window, mock_unset_gauges, \
+                                                      mock_update, mock_start_server):
+        """Test a single iteration of the main loop outside an active window."""
+        # Mock being outside an active window
+        mock_is_in_window.return_value = False
         
-        # The actual assertions would depend on how we structure this test
-        # For now, just verify the mocks exist
-        self.assertTrue(mock_start_server.called or True)  # Will be called in actual main
+        # Mock current time and next run time
+        current_time = datetime(2024, 1, 15, 3, 5, 0)
+        next_run_time = datetime(2024, 1, 15, 6, 0, 0)
+        
+        mock_datetime.now.return_value = current_time
+        mock_get_next_run.return_value = next_run_time
+        
+        # Mock sleep to break the loop after one iteration
+        mock_sleep.side_effect = KeyboardInterrupt()
+        
+        with self.assertRaises(KeyboardInterrupt):
+            record.start_http_server(record.PROMETHEUS_PORT)
+            while True:
+                if record.is_in_active_window():
+                    record.update_commute_time()
+                else:
+                    record.unset_gauges()
+                next_scheduled_run = record.get_next_run_time()
+                sleep_duration = (next_scheduled_run - record.datetime.now(record.CET)).total_seconds()
+                if sleep_duration > 0:
+                    time.sleep(sleep_duration)
+
+        mock_update.assert_not_called()
+        mock_unset_gauges.assert_called_once()
 
 
 if __name__ == '__main__':
